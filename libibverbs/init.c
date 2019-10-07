@@ -110,8 +110,6 @@ static int find_sysfs_devs(struct list_head *tmp_sysfs_dev_list)
 			continue;
 
 		if (stat(sysfs_dev->sysfs_path, &buf)) {
-			fprintf(stderr, PFX "Warning: couldn't stat '%s'.\n",
-				sysfs_dev->sysfs_path);
 			continue;
 		}
 
@@ -125,8 +123,6 @@ static int find_sysfs_devs(struct list_head *tmp_sysfs_dev_list)
 		if (ibv_read_sysfs_file(sysfs_dev->sysfs_path, "ibdev",
 					sysfs_dev->ibdev_name,
 					sizeof sysfs_dev->ibdev_name) < 0) {
-			fprintf(stderr, PFX "Warning: no ibdev class attr for '%s'.\n",
-				dent->d_name);
 			continue;
 		}
 
@@ -137,8 +133,6 @@ static int find_sysfs_devs(struct list_head *tmp_sysfs_dev_list)
 			continue;
 
 		if (stat(sysfs_dev->ibdev_path, &buf)) {
-			fprintf(stderr, PFX "Warning: couldn't stat '%s'.\n",
-				sysfs_dev->ibdev_path);
 			continue;
 		}
 
@@ -174,9 +168,6 @@ void verbs_register_driver(const struct verbs_device_ops *ops)
 
 	driver = malloc(sizeof *driver);
 	if (!driver) {
-		fprintf(stderr,
-			PFX "Warning: couldn't allocate driver for %s\n",
-			ops->name);
 		return;
 	}
 
@@ -268,12 +259,6 @@ static bool match_device(const struct verbs_device_ops *ops,
 
 	if (sysfs_dev->abi_ver < ops->match_min_abi_version ||
 	    sysfs_dev->abi_ver > ops->match_max_abi_version) {
-		fprintf(stderr, PFX
-			"Warning: Driver %s does not support the kernel ABI of %u (supports %u to %u) for device %s\n",
-			ops->name, sysfs_dev->abi_ver,
-			ops->match_min_abi_version,
-			ops->match_max_abi_version,
-			sysfs_dev->ibdev_path);
 		return false;
 	}
 	return true;
@@ -291,8 +276,6 @@ static struct verbs_device *try_driver(const struct verbs_device_ops *ops,
 
 	vdev = ops->alloc_device(sysfs_dev);
 	if (!vdev) {
-		fprintf(stderr, PFX "Fatal: couldn't allocate device for %s\n",
-			sysfs_dev->ibdev_path);
 		return NULL;
 	}
 
@@ -304,9 +287,7 @@ static struct verbs_device *try_driver(const struct verbs_device_ops *ops,
 	assert(dev->_ops._dummy2 == NULL);
 
 	if (ibv_read_sysfs_file(sysfs_dev->ibdev_path, "node_type", value, sizeof value) < 0) {
-		fprintf(stderr, PFX "Warning: no node_type attr under %s.\n",
-			sysfs_dev->ibdev_path);
-			dev->node_type = IBV_NODE_UNKNOWN;
+		dev->node_type = IBV_NODE_UNKNOWN;
 	} else {
 		dev->node_type = strtol(value, NULL, 10);
 		if (dev->node_type < IBV_NODE_CA || dev->node_type > IBV_NODE_USNIC_UDP)
@@ -369,31 +350,10 @@ static int check_abi_version(const char *path)
 
 	if (abi_ver < IB_USER_VERBS_MIN_ABI_VERSION ||
 	    abi_ver > IB_USER_VERBS_MAX_ABI_VERSION) {
-		fprintf(stderr, PFX "Fatal: kernel ABI version %d "
-			"doesn't match library version %d.\n",
-			abi_ver, IB_USER_VERBS_MAX_ABI_VERSION);
 		return ENOSYS;
 	}
 
 	return 0;
-}
-
-static void check_memlock_limit(void)
-{
-	struct rlimit rlim;
-
-	if (!geteuid())
-		return;
-
-	if (getrlimit(RLIMIT_MEMLOCK, &rlim)) {
-		fprintf(stderr, PFX "Warning: getrlimit(RLIMIT_MEMLOCK) failed.");
-		return;
-	}
-
-	if (rlim.rlim_cur <= 32768)
-		fprintf(stderr, PFX "Warning: RLIMIT_MEMLOCK is %llu bytes.\n"
-			"    This will severely limit memory registrations.\n",
-			(unsigned long long)rlim.rlim_cur);
 }
 
 static int same_sysfs_dev(struct verbs_sysfs_dev *sysfs1,
@@ -482,9 +442,6 @@ out:
 	 */
 	list_for_each_safe(&sysfs_list, sysfs_dev, next_dev, entry) {
 		if (getenv("IBV_SHOW_WARNINGS")) {
-			fprintf(stderr, PFX
-				"Warning: no userspace device-specific driver found for %s\n",
-				sysfs_dev->sysfs_path);
 		}
 		free(sysfs_dev);
 	}
@@ -499,9 +456,7 @@ int ibverbs_init(void)
 	int ret;
 
 	if (getenv("RDMAV_FORK_SAFE") || getenv("IBV_FORK_SAFE"))
-		if (ibv_fork_init())
-			fprintf(stderr, PFX "Warning: fork()-safety requested "
-				"but init failed\n");
+		ibv_fork_init();
 
 	/* Backward compatibility for the mlx4 driver env */
 	env_value = getenv("MLX4_DEVICE_FATAL_CLEANUP");
@@ -518,8 +473,6 @@ int ibverbs_init(void)
 	ret = check_abi_version(sysfs_path);
 	if (ret)
 		return -ret;
-
-	check_memlock_limit();
 
 	return 0;
 }
