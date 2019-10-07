@@ -518,7 +518,6 @@ int pvrdma_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			}
 			break;
 		default:
-			fprintf(stderr, PFX "invalid post send opcode\n");
 			ret = EINVAL;
 			*bad_wr = wr;
 			goto out;
