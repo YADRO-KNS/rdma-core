@@ -143,9 +143,6 @@ static int mlx4_map_internal_clock(struct mlx4_device *mdev,
 			      mdev->page_size * 3);
 
 	if (hca_clock_page == MAP_FAILED) {
-		fprintf(stderr, PFX
-			"Warning: Timestamp available,\n"
-			"but failed to mmap() hca core clock page.\n");
 		return -1;
 	}
 
@@ -221,10 +218,8 @@ static struct verbs_context *mlx4_alloc_context(struct ibv_device *ibdev,
 					PROT_WRITE, MAP_SHARED, cmd_fd,
 					dev->page_size);
 		if (context->bf_page == MAP_FAILED) {
-			fprintf(stderr, PFX "Warning: BlueFlame available, "
-				"but failed to mmap() BlueFlame page.\n");
-				context->bf_page     = NULL;
-				context->bf_buf_size = 0;
+			context->bf_page     = NULL;
+			context->bf_buf_size = 0;
 		} else {
 			context->bf_buf_size = bf_reg_size / 2;
 			context->bf_offset   = 0;
