@@ -785,7 +785,6 @@ static struct ibv_ah *rxe_create_ah(struct ibv_pd *pd, struct ibv_ah_attr *attr)
 	err = ibv_query_gid(pd->context, attr->port_num, attr->grh.sgid_index,
 			    &sgid);
 	if (err) {
-		fprintf(stderr, "rxe: Failed to query sgid.\n");
 		return NULL;
 	}
 
