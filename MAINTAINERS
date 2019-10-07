@@ -177,3 +177,8 @@ M:	Adit Ranadive <aditr@vmware.com>
 L:	pv-drivers@vmware.com
 S:	Supported
 F:	providers/vmw_pvrdma/
+
+NTRDMA PROVIDER (for ntrdma.ko)
+M:	Andrew Boyer <andrew.boyer@dell.com>
+S:	Supported
+F:	providers/ntrdma/

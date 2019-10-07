@@ -105,6 +105,7 @@ Description: User space provider drivers for libibverbs
   - qedr: QLogic QL4xxx RoCE HCAs
   - rxe: A software implementation of the RoCE protocol
   - vmw_pvrdma: VMware paravirtual RDMA device
+  - ntrdma: Non-Transparent RDMA device
 
 Package: ibverbs-utils
 Architecture: linux-any

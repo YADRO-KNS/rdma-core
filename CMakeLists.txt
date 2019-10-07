@@ -590,6 +590,7 @@ add_subdirectory(providers/nes) # NO SPARSE
 add_subdirectory(providers/ocrdma)
 add_subdirectory(providers/qedr)
 add_subdirectory(providers/vmw_pvrdma)
+add_subdirectory(providers/ntrdma)
 endif()
 
 add_subdirectory(providers/hfi1verbs)
