@@ -742,6 +742,7 @@ int i40iw_umodify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask)
 int i40iw_udestroy_qp(struct ibv_qp *qp)
 {
 	struct i40iw_uqp *iwuqp = to_i40iw_uqp(qp);
+	struct i40iw_ucq *iwucq;
 	int ret;
 
 	ret = pthread_spin_destroy(&iwuqp->lock);
@@ -752,16 +753,31 @@ int i40iw_udestroy_qp(struct ibv_qp *qp)
 	if (ret)
 		return ret;
 
+	/* Clean any pending completions from the cq(s) */
+	if (iwuqp->send_cq) {
+		iwucq = to_i40iw_ucq(&iwuqp->send_cq->ibv_cq);
+		ret = pthread_spin_lock(&iwucq->lock);
+		if (ret)
+			return ret;
+
+		i40iw_clean_cq((void *)&iwuqp->qp, &iwuqp->send_cq->cq);
+		pthread_spin_unlock(&iwucq->lock);
+	}
+
+	if ((iwuqp->recv_cq) && (iwuqp->recv_cq != iwuqp->send_cq)) {
+		iwucq = to_i40iw_ucq(&iwuqp->recv_cq->ibv_cq);
+		ret = pthread_spin_lock(&iwucq->lock);
+		if (ret)
+			return ret;
+
+		i40iw_clean_cq((void *)&iwuqp->qp, &iwuqp->recv_cq->cq);
+		pthread_spin_unlock(&iwucq->lock);
+	}
+
 	if (iwuqp->qp.sq_wrtrk_array)
 		free(iwuqp->qp.sq_wrtrk_array);
 	if (iwuqp->qp.rq_wrid_array)
 		free(iwuqp->qp.rq_wrid_array);
-	/* Clean any pending completions from the cq(s) */
-	if (iwuqp->send_cq)
-		i40iw_clean_cq((void *)&iwuqp->qp, &iwuqp->send_cq->cq);
-
-	if ((iwuqp->recv_cq) && (iwuqp->recv_cq != iwuqp->send_cq))
-		i40iw_clean_cq((void *)&iwuqp->qp, &iwuqp->recv_cq->cq);
 
 	free(iwuqp);
 
