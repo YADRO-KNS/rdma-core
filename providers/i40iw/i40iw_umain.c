@@ -153,8 +153,6 @@ static struct verbs_context *i40iw_ualloc_context(struct ibv_device *ibdev,
 	}
 
 	if (resp.kernel_ver > I40IW_ABI_VER) {
-		fprintf(stderr, PFX "%s: incompatible kernel driver version: %d.  Need version %d\n",
-			__func__, resp.kernel_ver, I40IW_ABI_VER);
 		goto err_free;
 	}
 
@@ -174,7 +172,6 @@ static struct verbs_context *i40iw_ualloc_context(struct ibv_device *ibdev,
 	return &iwvctx->ibv_ctx;
 
 err_free:
-	fprintf(stderr, PFX "%s: failed to allocate context for device.\n", __func__);
 	verbs_uninit_context(&iwvctx->ibv_ctx);
 	free(iwvctx);
 

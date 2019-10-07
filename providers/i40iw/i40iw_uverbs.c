@@ -64,7 +64,6 @@ int i40iw_uquery_device(struct ibv_context *context, struct ibv_device_attr *att
 
 	ret = ibv_cmd_query_device(context, attr, &i40iw_fw_ver, &cmd, sizeof(cmd));
 	if (ret) {
-		fprintf(stderr, PFX "%s: query device failed and returned status code: %d\n", __func__, ret);
 		return ret;
 	}
 
@@ -164,7 +163,6 @@ struct ibv_mr *i40iw_ureg_mr(struct ibv_pd *pd, void *addr, size_t length, int a
 	if (ibv_cmd_reg_mr(pd, addr, length, (uintptr_t)addr,
 			   access, vmr, &cmd.ibv_cmd, sizeof(cmd),
 			   &resp, sizeof(resp))) {
-		fprintf(stderr, PFX "%s: Failed to register memory\n", __func__);
 		free(vmr);
 		return NULL;
 	}
@@ -264,7 +262,6 @@ struct ibv_cq *i40iw_ucreate_cq(struct ibv_context *context, int cqe,
 			     &reg_mr_cmd.ibv_cmd, sizeof(reg_mr_cmd),
 			     &reg_mr_resp, sizeof(reg_mr_resp));
 	if (ret) {
-		fprintf(stderr, PFX "%s: failed to pin memory for CQ\n", __func__);
 		goto err;
 	}
 
@@ -274,7 +271,6 @@ struct ibv_cq *i40iw_ucreate_cq(struct ibv_context *context, int cqe,
 				&resp.ibv_resp, sizeof(resp));
 	if (ret) {
 		ibv_cmd_dereg_mr(&iwucq->vmr);
-		fprintf(stderr, PFX "%s: failed to create CQ\n", __func__);
 		goto err;
 	}
 
@@ -285,8 +281,7 @@ struct ibv_cq *i40iw_ucreate_cq(struct ibv_context *context, int cqe,
 	ret = iwvctx->dev.ops_uk.iwarp_cq_uk_init(&iwucq->cq, &info);
 	if (!ret)
 		return &iwucq->ibv_cq;
-	else
-		fprintf(stderr, PFX "%s: failed to initialize CQ, status %d\n", __func__, ret);
+
 err:
 	if (info.cq_base)
 		free(info.cq_base);
@@ -346,7 +341,6 @@ int i40iw_upoll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *entry)
 		} else if (ret == I40IW_ERR_QUEUE_DESTROYED) {
 			continue;
 		} else if (ret) {
-			fprintf(stderr, PFX "%s: Error polling CQ, status %d\n", __func__, ret);
 			if (!cqe_count)
 				/* Indicate error */
 				cqe_count = -1;
@@ -519,7 +513,6 @@ static int i40iw_vmapped_qp(struct i40iw_uqp *iwuqp, struct ibv_pd *pd,
 	info->sq = memalign(I40IW_HW_PAGE_SIZE, totalqpsize);
 
 	if (!info->sq) {
-		fprintf(stderr, PFX "%s: failed to allocate memory for SQ\n", __func__);
 		return 0;
 	}
 
@@ -537,7 +530,6 @@ static int i40iw_vmapped_qp(struct i40iw_uqp *iwuqp, struct ibv_pd *pd,
 			     sizeof(reg_mr_cmd), &reg_mr_resp,
 			     sizeof(reg_mr_resp));
 	if (ret) {
-		fprintf(stderr, PFX "%s: failed to pin memory for SQ\n", __func__);
 		free(info->sq);
 		return 0;
 	}
@@ -547,7 +539,6 @@ static int i40iw_vmapped_qp(struct i40iw_uqp *iwuqp, struct ibv_pd *pd,
 	ret = ibv_cmd_create_qp(pd, &iwuqp->ibv_qp, attr, &cmd.ibv_cmd, sizeof(cmd),
 				&resp->ibv_resp, sizeof(struct i40iw_ucreate_qp_resp));
 	if (ret) {
-		fprintf(stderr, PFX "%s: failed to create QP, status %d\n", __func__, ret);
 		ibv_cmd_dereg_mr(&iwuqp->vmr);
 		free(info->sq);
 		return 0;
@@ -567,7 +558,6 @@ static int i40iw_vmapped_qp(struct i40iw_uqp *iwuqp, struct ibv_pd *pd,
 		map = mmap(NULL, I40IW_HW_PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_SHARED,
 			   pd->context->cmd_fd, offset);
 		if (map == MAP_FAILED) {
-			fprintf(stderr, PFX "%s: failed to map push page, errno %d\n", __func__, errno);
 			info->push_wqe = NULL;
 			info->push_db = NULL;
 		} else {
@@ -577,7 +567,6 @@ static int i40iw_vmapped_qp(struct i40iw_uqp *iwuqp, struct ibv_pd *pd,
 			map = mmap(NULL, I40IW_HW_PAGE_SIZE, PROT_WRITE | PROT_READ, MAP_SHARED,
 				   pd->context->cmd_fd, offset);
 			if (map == MAP_FAILED) {
-				fprintf(stderr, PFX "%s: failed to map push doorbell, errno %d\n", __func__, errno);
 				munmap(info->push_wqe, I40IW_HW_PAGE_SIZE);
 				info->push_wqe = NULL;
 				info->push_db = NULL;
@@ -606,7 +595,6 @@ struct ibv_qp *i40iw_ucreate_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr
 	u8 sqshift, rqshift;
 
 	if (attr->qp_type != IBV_QPT_RC) {
-		fprintf(stderr, PFX "%s: failed to create QP, unsupported QP type: 0x%x\n", __func__, attr->qp_type);
 		return NULL;
 	}
 
@@ -621,8 +609,6 @@ struct ibv_qp *i40iw_ucreate_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr
 
 	i40iw_get_wqe_shift(attr->cap.max_send_sge, attr->cap.max_inline_data, &sqshift);
 	if (i40iw_get_sqdepth(attr->cap.max_send_wr, sqshift, &sqdepth)) {
-		fprintf(stderr, PFX "invalid SQ attributes, max_send_wr=%d max_send_sge=%d max_inline=%d\n",
-			attr->cap.max_send_wr, attr->cap.max_send_sge, attr->cap.max_inline_data);
 		return NULL;
 	}
 
@@ -637,8 +623,6 @@ struct ibv_qp *i40iw_ucreate_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr
 	}
 
 	if (i40iw_get_rqdepth(attr->cap.max_recv_wr, rqshift, &rqdepth)) {
-		fprintf(stderr, PFX "invalid RQ attributes, max_recv_wr=%d max_recv_sge=%d\n",
-			attr->cap.max_recv_wr, attr->cap.max_recv_sge);
 		return NULL;
 	}
 
@@ -665,20 +649,17 @@ struct ibv_qp *i40iw_ucreate_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr
 	info.abi_ver = iwvctx->abi_ver;
 
 	if (!info.sq_wrtrk_array) {
-		fprintf(stderr, PFX "%s: failed to allocate memory for SQ work array\n", __func__);
 		goto err_destroy_lock;
 	}
 
 	info.rq_wrid_array = calloc(rqdepth, sizeof(*info.rq_wrid_array));
 	if (!info.rq_wrid_array) {
-		fprintf(stderr, PFX "%s: failed to allocate memory for RQ work array\n", __func__);
 		goto err_free_sq_wrtrk;
 	}
 
 	iwuqp->sq_sig_all = attr->sq_sig_all;
 	memset(&resp, 0, sizeof(resp));
 	if (!i40iw_vmapped_qp(iwuqp, pd, attr, &resp, sqdepth, rqdepth, &info)) {
-		fprintf(stderr, PFX "%s: failed to map QP\n", __func__);
 		goto err_free_rq_wrid;
 	}
 	info.qp_id = resp.qp_id;
@@ -912,7 +893,6 @@ int i40iw_upost_send(struct ibv_qp *ib_qp, struct ibv_send_wr *ib_wr, struct ibv
 		default:
 			/* error */
 			err = -EINVAL;
-			fprintf(stderr, PFX "%s: post work request failed, invalid opcode: 0x%x\n", __func__, ib_wr->opcode);
 			break;
 		}
 
@@ -956,7 +936,6 @@ int i40iw_upost_recv(struct ibv_qp *ib_qp, struct ibv_recv_wr *ib_wr, struct ibv
 		post_recv.sg_list = sg_list;
 		ret = iwuqp->qp.ops.iw_post_receive(&iwuqp->qp, &post_recv);
 		if (ret) {
-			fprintf(stderr, PFX "%s: failed to post receives, status %d\n", __func__, ret);
 			if (ret == I40IW_ERR_QP_TOOMANY_WRS_POSTED)
 				err = -ENOMEM;
 			else
