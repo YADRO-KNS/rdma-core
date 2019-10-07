@@ -50,10 +50,10 @@
 
 #include <ccan/minmax.h>
 
-enum {
-	PINGPONG_RECV_WRID = 1,
-	PINGPONG_SEND_WRID = 2,
-};
+#define PINGPONG_RECV_WRID 0x1
+#define PINGPONG_SEND_WRID 0x2
+#define PINGPONG_WRID_MASK 0x3
+#define PINGPONG_WRID_SHIFT 2
 
 static int page_size;
 static int use_odp;
@@ -61,6 +61,7 @@ static int prefetch_mr;
 static int use_ts;
 static int validate_buf;
 static int use_dm;
+static int verbose;
 
 struct pingpong_context {
 	struct ibv_context	*context;
@@ -77,7 +78,7 @@ struct pingpong_context {
 	int			 size;
 	int			 send_flags;
 	int			 rx_depth;
-	int			 pending;
+	uint64_t		 pending;
 	struct ibv_port_attr     portinfo;
 	uint64_t		 completion_timestamp_mask;
 };
@@ -591,6 +592,8 @@ static int pp_close_ctx(struct pingpong_context *ctx)
 	return 0;
 }
 
+static uint64_t recv_wrid, send_wrid;
+
 static int pp_post_recv(struct pingpong_context *ctx, int n)
 {
 	struct ibv_sge list = {
@@ -599,16 +602,18 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
 		.lkey	= ctx->mr->lkey
 	};
 	struct ibv_recv_wr wr = {
-		.wr_id	    = PINGPONG_RECV_WRID,
 		.sg_list    = &list,
 		.num_sge    = 1,
 	};
 	struct ibv_recv_wr *bad_wr;
 	int i;
 
-	for (i = 0; i < n; ++i)
+	for (i = 0; i < n; ++i) {
+		wr.wr_id = PINGPONG_RECV_WRID |
+				(recv_wrid++ << PINGPONG_WRID_SHIFT);
 		if (ibv_post_recv(ctx->qp, &wr, &bad_wr))
 			break;
+	}
 
 	return i;
 }
@@ -621,13 +626,20 @@ static int pp_post_send(struct pingpong_context *ctx)
 		.lkey	= ctx->mr->lkey
 	};
 	struct ibv_send_wr wr = {
-		.wr_id	    = PINGPONG_SEND_WRID,
+		.wr_id	    = PINGPONG_SEND_WRID |
+				(send_wrid++ << PINGPONG_WRID_SHIFT),
 		.sg_list    = &list,
 		.num_sge    = 1,
 		.opcode     = IBV_WR_SEND,
 		.send_flags = ctx->send_flags,
 	};
 	struct ibv_send_wr *bad_wr;
+
+	uint64_t *buf = (uint64_t *)ctx->buf;
+
+	*buf = *buf + 1;
+	if (verbose)
+		printf("Send %p %#08lx\n", (void *)wr.sg_list[0].addr, *buf);
 
 	return ibv_post_send(ctx->qp, &wr, &bad_wr);
 }
@@ -647,6 +659,8 @@ static inline int parse_single_wc(struct pingpong_context *ctx, int *scnt,
 				  uint64_t completion_timestamp,
 				  struct ts_params *ts)
 {
+	uint64_t *buf;
+
 	if (status != IBV_WC_SUCCESS) {
 		fprintf(stderr, "Failed status %s (%d) for wr_id %d\n",
 			ibv_wc_status_str(status),
@@ -654,12 +668,16 @@ static inline int parse_single_wc(struct pingpong_context *ctx, int *scnt,
 		return 1;
 	}
 
-	switch ((int)wr_id) {
+	switch (wr_id & PINGPONG_WRID_MASK) {
 	case PINGPONG_SEND_WRID:
 		++(*scnt);
 		break;
 
 	case PINGPONG_RECV_WRID:
+		buf = (uint64_t *)ctx->buf;
+		if (verbose)
+			printf("Recv %p          %#08lx\n", buf, *buf);
+
 		if (--(*routs) <= 1) {
 			*routs += pp_post_recv(ctx, ctx->rx_depth - *routs);
 			if (*routs < ctx->rx_depth) {
@@ -702,7 +720,7 @@ static inline int parse_single_wc(struct pingpong_context *ctx, int *scnt,
 		return 1;
 	}
 
-	ctx->pending &= ~(int)wr_id;
+	ctx->pending &= ~wr_id;
 	if (*scnt < iters && !ctx->pending) {
 		if (pp_post_send(ctx)) {
 			fprintf(stderr, "Couldn't post send\n");
@@ -737,6 +755,7 @@ static void usage(const char *argv0)
 	printf("  -t, --ts	            get CQE with timestamp\n");
 	printf("  -c, --chk	            validate received buffer\n");
 	printf("  -j, --dm	            use device memory\n");
+	printf("  -v, --verbose	            verbose output\n");
 }
 
 int main(int argc, char *argv[])
@@ -785,10 +804,11 @@ int main(int argc, char *argv[])
 			{ .name = "ts",       .has_arg = 0, .val = 't' },
 			{ .name = "chk",      .has_arg = 0, .val = 'c' },
 			{ .name = "dm",       .has_arg = 0, .val = 'j' },
+			{ .name = "verbose",  .has_arg = 0, .val = 'v' },
 			{}
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:s:m:r:n:l:eg:oPtcj",
+		c = getopt_long(argc, argv, "p:d:i:s:m:r:n:l:eg:oPtcjv",
 				long_options, NULL);
 
 		if (c == -1)
@@ -862,6 +882,10 @@ int main(int argc, char *argv[])
 
 		case 'j':
 			use_dm = 1;
+			break;
+
+		case 'v':
+			verbose = 1;
 			break;
 
 		default:
