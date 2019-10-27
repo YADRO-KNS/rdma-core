@@ -63,6 +63,46 @@ static const struct verbs_context_ops ntrdma_ctx_ops = {
 	.req_notify_cq = ntrdma_req_notify_cq,
 };
 
+bool ntrdma_measure_perf;
+__attribute__((constructor)) static void init_ntrdma_measure_perf(void)
+{
+	FILE *f;
+	int i, rc;
+
+	f = fopen("/sys/class/ntrdma/ntrdma/measure_perf", "r");
+	if (!f)
+		return;
+
+	rc = fscanf(f, "%d", &i);
+	if (rc == 1)
+		ntrdma_measure_perf = !!i;
+
+	fclose(f);
+}
+
+bool ntrdma_print_debug;
+__attribute__((constructor)) static void init_ntrdma_print_debug(void)
+{
+	FILE *f;
+	int i, rc;
+
+	f = fopen("/sys/class/ntrdma/ntrdma/print_debug", "r");
+	if (!f)
+		return;
+
+	rc = fscanf(f, "%d", &i);
+	if (rc == 1)
+		ntrdma_print_debug = !!i;
+
+	fclose(f);
+}
+
+FILE *ntrdma_kmsg_file;
+__attribute__((constructor)) static void init_ntrdma_kmsg_file(void)
+{
+	ntrdma_kmsg_file = fopen("/dev/kmsg", "w");
+}
+
 static struct verbs_context *ntrdma_alloc_context(struct ibv_device *ibdev,
 						  int cmd_fd,
 						  void *private_data)
