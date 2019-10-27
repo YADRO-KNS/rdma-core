@@ -35,6 +35,10 @@
 
 #include <infiniband/driver.h>
 #include <ccan/container_of.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <stdio.h>
 
 struct ntrdma_dev {
 	struct verbs_device	ibdev;
@@ -81,5 +85,104 @@ int ntrdma_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *rwr,
 struct ibv_ah *ntrdma_create_ah(struct ibv_pd *pd, struct ibv_ah_attr *attr);
 int ntrdma_destroy_ah(struct ibv_ah *ah);
 int ntrdma_req_notify_cq(struct ibv_cq *cq, int solicited_only);
+
+typedef unsigned long long cycles_t;
+typedef unsigned long long u64;
+typedef unsigned int u32;
+
+struct ntc_perf_tracker {
+	cycles_t total;
+	cycles_t total_out;
+	cycles_t last;
+	u64 num_calls;
+};
+
+struct ntc_perf_tracker_current {
+	struct ntc_perf_tracker *tracker;
+	cycles_t start;
+	const char *prefix;
+	u64 window;
+};
+
+static inline u64 ntc_get_cycles(void)
+{
+	u32 low, high;
+
+	__asm __volatile("rdtsc" : "=a" (low), "=d" (high)::"memory");
+	return (low | ((u64)high << 32));
+}
+
+extern bool ntrdma_measure_perf;
+extern bool ntrdma_print_debug;
+extern FILE *ntrdma_kmsg_file;
+
+#define PRINT_KMSG(format, ...)					\
+	do {							\
+		FILE *kmsg_file = ntrdma_kmsg_file;		\
+		if (!kmsg_file)					\
+			break;					\
+		fprintf(kmsg_file, format, ## __VA_ARGS__);	\
+		fflush(kmsg_file);				\
+	} while (0)
+
+#define PRINT_DEBUG_KMSG(format, ...)			\
+	do {						\
+		if (!ntrdma_print_debug)		\
+			break;				\
+		PRINT_KMSG(format, ## __VA_ARGS__);	\
+	} while (0)
+
+
+
+static inline void ntc_perf_finish_measure(struct ntc_perf_tracker_current *c)
+{
+	struct ntc_perf_tracker *t = c->tracker;
+
+	if (!ntrdma_measure_perf)
+		return;
+
+	if (likely(t->last || t->num_calls))
+		t->total_out += c->start - t->last;
+
+	t->last = ntc_get_cycles();
+	t->total += t->last - c->start;
+	t->num_calls++;
+
+	if (t->num_calls != c->window)
+		return;
+
+	PRINT_KMSG("USPERF: %s [%d]: "
+		"%lld calls. %lld%% of time. %lld cyc average.\n",
+		c->prefix, (int)syscall(SYS_gettid), t->num_calls,
+		t->total * 100 / (t->total + t->total_out),
+		t->total / t->num_calls);
+
+	t->num_calls = 0;
+	t->total_out = 0;
+	t->total = 0;
+}
+
+#define NTC_PERF_TRACK
+
+#ifdef NTC_PERF_TRACK
+
+#define DEFINE_NTC_PERF_TRACKER(name, p, w)				\
+	static __thread struct ntc_perf_tracker name##_per_cpu;		\
+	struct ntc_perf_tracker_current name =				\
+	{ .start = ntc_get_cycles(), .prefix = p, .window = w }
+
+#define NTC_PERF_MEASURE(name) do {					\
+		name.tracker = &name##_per_cpu;				\
+		ntc_perf_finish_measure(&name);				\
+	} while (0)
+
+#else
+#define DEFINE_NTC_PERF_TRACKER(name, p, w) int name  __attribute__ ((unused))
+#define NTC_PERF_MEASURE(name) do {} while (0)
+#endif
+
+
+#define DEFINE_NTC_FUNC_PERF_TRACKER(name, w)		\
+	DEFINE_NTC_PERF_TRACKER(name, __func__, w)
 
 #endif

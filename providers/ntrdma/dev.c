@@ -244,7 +244,13 @@ int ntrdma_query_qp(struct ibv_qp *qp,
 int ntrdma_post_send(struct ibv_qp *qp, struct ibv_send_wr *swr,
 		     struct ibv_send_wr **bad)
 {
-	return ibv_cmd_post_send(qp, swr, bad);
+	int rc;
+
+	DEFINE_NTC_FUNC_PERF_TRACKER(perf, 1 << 20);
+	rc = ibv_cmd_post_send(qp, swr, bad);
+	NTC_PERF_MEASURE(perf);
+
+	return rc;
 }
 
 int ntrdma_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *rwr,
