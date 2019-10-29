@@ -155,7 +155,7 @@ ntrdma_driver_alloc(struct verbs_sysfs_dev *sysfs_dev)
 
 static void ntrdma_driver_uninit(struct verbs_device *verbs_device)
 {
-	struct ntrdma_dev *dev = to_ntrdma_dev(&verbs_device->device);
+	struct ntrdma_dev *dev = to_ntrdma_dev(verbs_device);
 
 	free(dev);
 }

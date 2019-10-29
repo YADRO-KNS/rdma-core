@@ -44,7 +44,7 @@ struct ntrdma_dev {
 	struct verbs_device	ibdev;
 };
 
-static inline struct ntrdma_dev *to_ntrdma_dev(struct ibv_device *ibdev)
+static inline struct ntrdma_dev *to_ntrdma_dev(struct verbs_device *ibdev)
 {
 	return container_of(ibdev, struct ntrdma_dev, ibdev);
 }
@@ -56,6 +56,16 @@ struct ntrdma_context {
 static inline struct ntrdma_context *to_ntrdma_ctx(struct ibv_context *ibctx)
 {
         return container_of(ibctx, struct ntrdma_context, ibv_ctx.context);
+}
+
+struct ntrdma_qp {
+	struct ibv_qp ibv_qp;
+	int fd;
+};
+
+static inline struct ntrdma_qp *to_ntrdma_qp(struct ibv_qp *ibv_qp)
+{
+        return container_of(ibv_qp, struct ntrdma_qp, ibv_qp);
 }
 
 int ntrdma_query_device(struct ibv_context *context,
