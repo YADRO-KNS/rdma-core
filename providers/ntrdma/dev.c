@@ -178,9 +178,18 @@ int ntrdma_destroy_cq(struct ibv_cq *cq)
 struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 				struct ibv_qp_init_attr *attr)
 {
-	struct ibv_qp *qp;
+	struct ntrdma_qp *qp;
 	struct ibv_create_qp cmd;
-	struct ib_uverbs_create_qp_resp resp;
+	struct {
+		 /* resp must be first member of this struct. */
+		struct ib_uverbs_create_qp_resp resp;
+		int qpfd;
+	} ext_resp = {
+		.qpfd = -1,
+	};
+
+	/* resp must be first member of ext_resp. */
+	assert((void *)&ext_resp == (void *)&ext_resp.resp);
 
 	qp = malloc(sizeof(*qp));
 	if (!qp)
@@ -188,13 +197,17 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 
 	memset(qp, 0, sizeof(*qp));
 
-	errno = ibv_cmd_create_qp(pd, qp, attr,
-				  &cmd, sizeof cmd,
-				  &resp, sizeof resp);
+	errno = ibv_cmd_create_qp(pd, &qp->ibv_qp, attr,
+				&cmd, sizeof cmd,
+				&ext_resp.resp, sizeof ext_resp);
 	if (errno)
 		goto err_free;
 
-	return qp;
+	qp->fd = ext_resp.qpfd;
+
+	PRINT_DEBUG_KMSG("NTRDMADEB %s: qp->fd = %d\n", __func__, qp->fd);
+
+	return &qp->ibv_qp;
 
 err_free:
 	free(qp);
@@ -219,11 +232,17 @@ err_free:
 	return ret;
 }
 
-int ntrdma_destroy_qp(struct ibv_qp *qp)
+int ntrdma_destroy_qp(struct ibv_qp *_qp)
 {
+	struct ntrdma_qp *qp = to_ntrdma_qp(_qp);
 	int ret;
 
-	ret = ibv_cmd_destroy_qp(qp);
+	if (qp->fd >= 0) {
+		close(qp->fd);
+		qp->fd = -1;
+	}
+
+	ret = ibv_cmd_destroy_qp(&qp->ibv_qp);
 	if (ret)
 		return ret;
 
