@@ -34,6 +34,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <malloc.h>
 #include "ntrdma.h"
 
 int ntrdma_query_device(struct ibv_context *context,
@@ -196,21 +198,37 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 		return NULL;
 
 	memset(qp, 0, sizeof(*qp));
+
 	pthread_mutex_init(&qp->mutex, NULL);
+
+	qp->buffer_size = sysconf(_SC_PAGESIZE);
+	qp->buffer = memalign(qp->buffer_size, qp->buffer_size);
+	if (!qp->buffer)
+		goto err;
 
 	errno = ibv_cmd_create_qp(pd, &qp->ibv_qp, attr,
 				&cmd, sizeof cmd,
 				&ext_resp.resp, sizeof ext_resp);
 	if (errno)
-		goto err_free;
+		goto err;
 
 	qp->fd = ext_resp.qpfd;
 
 	PRINT_DEBUG_KMSG("NTRDMADEB %s: qp->fd = %d\n", __func__, qp->fd);
 
+	if (qp->fd < 0) {
+		free(qp->buffer);
+		qp->buffer = NULL;
+	}
+
 	return &qp->ibv_qp;
 
-err_free:
+ err:
+	if (qp->buffer)
+		free(qp->buffer);
+
+	pthread_mutex_destroy(&qp->mutex);
+
 	free(qp);
 	return NULL;
 }
@@ -219,18 +237,9 @@ int ntrdma_modify_qp(struct ibv_qp *qp,
 		     struct ibv_qp_attr *attr, int attr_mask)
 {
 	struct ibv_modify_qp cmd;
-	int ret;
 
-	ret = ibv_cmd_modify_qp(qp, attr, attr_mask,
+	return ibv_cmd_modify_qp(qp, attr, attr_mask,
 				&cmd, sizeof cmd);
-	if (ret)
-		goto err_free;
-
-	return 0;
-
-err_free:
-	free(qp);
-	return ret;
 }
 
 int ntrdma_destroy_qp(struct ibv_qp *_qp)
@@ -246,6 +255,8 @@ int ntrdma_destroy_qp(struct ibv_qp *_qp)
 	ret = ibv_cmd_destroy_qp(&qp->ibv_qp);
 	if (ret)
 		return ret;
+
+	free(qp->buffer);
 
 	pthread_mutex_destroy(&qp->mutex);
 
@@ -272,6 +283,9 @@ int ntrdma_post_send(struct ibv_qp *_qp, struct ibv_send_wr *swr,
 	DEFINE_NTC_FUNC_PERF_TRACKER(perf, 1 << 20);
 
 	pthread_mutex_lock(&qp->mutex);
+
+	/* Now use qp->buffer */
+
 	rc = ibv_cmd_post_send(_qp, swr, bad);
 	pthread_mutex_unlock(&qp->mutex);
 
