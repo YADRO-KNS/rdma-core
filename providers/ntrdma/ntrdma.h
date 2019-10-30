@@ -62,6 +62,8 @@ static inline struct ntrdma_context *to_ntrdma_ctx(struct ibv_context *ibctx)
 struct ntrdma_qp {
 	struct ibv_qp ibv_qp;
 	pthread_mutex_t mutex;
+	void *buffer;
+	int buffer_size;
 	int fd;
 };
 
