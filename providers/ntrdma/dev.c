@@ -196,6 +196,7 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 		return NULL;
 
 	memset(qp, 0, sizeof(*qp));
+	pthread_mutex_init(&qp->mutex, NULL);
 
 	errno = ibv_cmd_create_qp(pd, &qp->ibv_qp, attr,
 				&cmd, sizeof cmd,
@@ -246,6 +247,8 @@ int ntrdma_destroy_qp(struct ibv_qp *_qp)
 	if (ret)
 		return ret;
 
+	pthread_mutex_destroy(&qp->mutex);
+
 	free(qp);
 	return 0;
 }
@@ -260,13 +263,18 @@ int ntrdma_query_qp(struct ibv_qp *qp,
 				&cmd, sizeof cmd);
 }
 
-int ntrdma_post_send(struct ibv_qp *qp, struct ibv_send_wr *swr,
+int ntrdma_post_send(struct ibv_qp *_qp, struct ibv_send_wr *swr,
 		     struct ibv_send_wr **bad)
 {
+	struct ntrdma_qp *qp = to_ntrdma_qp(_qp);
 	int rc;
 
 	DEFINE_NTC_FUNC_PERF_TRACKER(perf, 1 << 20);
-	rc = ibv_cmd_post_send(qp, swr, bad);
+
+	pthread_mutex_lock(&qp->mutex);
+	rc = ibv_cmd_post_send(_qp, swr, bad);
+	pthread_mutex_unlock(&qp->mutex);
+
 	NTC_PERF_MEASURE(perf);
 
 	return rc;
