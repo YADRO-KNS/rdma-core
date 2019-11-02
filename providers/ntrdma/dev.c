@@ -272,7 +272,10 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 				struct ibv_qp_init_attr *attr)
 {
 	struct ntrdma_qp *qp;
-	struct ibv_create_qp cmd;
+	struct {
+		struct ibv_create_qp cmd;
+		uint64_t send_page_ptr;
+	} ext_cmd;
 	struct {
 		 /* resp must be first member of this struct. */
 		struct ib_uverbs_create_qp_resp resp;
@@ -283,6 +286,9 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 
 	/* resp must be first member of ext_resp. */
 	assert((void *)&ext_resp == (void *)&ext_resp.resp);
+
+	/* cmd must be first member of ext_cmd. */
+	assert((void *)&ext_cmd == (void *)&ext_cmd.cmd);
 
 	qp = malloc(sizeof(*qp));
 	if (!qp)
@@ -296,9 +302,10 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 	qp->buffer = memalign(qp->buffer_size, qp->buffer_size);
 	if (!qp->buffer)
 		goto err;
+	ext_cmd.send_page_ptr = (unsigned long)qp->buffer;
 
 	errno = ibv_cmd_create_qp(pd, &qp->ibv_qp, attr,
-				&cmd, sizeof cmd,
+				&ext_cmd.cmd, sizeof ext_cmd,
 				&ext_resp.resp, sizeof ext_resp);
 	if (errno)
 		goto err;
