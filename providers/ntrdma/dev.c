@@ -55,21 +55,6 @@ struct ntrdma_send_wqe {
 };
 
 /* MUST BE THE SAME AS IN KERNEL */
-struct ntrdma_wr_snd_sge {
-	uint32_t			key;
-	union {
-		/* key != NTRDMA_RESERVED_DMA_LEKY */
-		struct {
-			uint64_t	addr;
-			uint32_t	len;
-		};
-		/* key == NTRDMA_RESERVED_DMA_LEKY */
-		/* struct ntc_local_buf	snd_dma_buf; */
-		uint8_t			filler[24];
-	};
-};
-
-/* MUST BE THE SAME AS IN KERNEL */
 struct ntrdma_snd_hdr {
 	uint32_t			wqe_counter;
 	uint32_t			first_wqe_size;
@@ -89,8 +74,6 @@ static inline int make_ntrdma_send_wqe(struct ntrdma_send_wqe *wqe,
 	bool is_inline;
 	size_t tail_size;
 	void *ptr;
-	struct ntrdma_wr_snd_sge *ntrdma_sge;
-	struct ibv_sge *ibv_sge;
 	size_t len;
 	int i;
 
@@ -112,7 +95,7 @@ static inline int make_ntrdma_send_wqe(struct ntrdma_send_wqe *wqe,
 		}
 		available_size -= tail_size;
 	} else {
-		tail_size = swr->num_sge * sizeof(struct ntrdma_wr_snd_sge);
+		tail_size = swr->num_sge * sizeof(struct ibv_sge);
 		if (available_size < tail_size)
 			return -ENOMEM;
 		available_size -= tail_size;
@@ -141,13 +124,7 @@ static inline int make_ntrdma_send_wqe(struct ntrdma_send_wqe *wqe,
 			memcpy(ptr, (void *)swr->sg_list[i].addr, len);
 		}
 	else
-		for ((i = 0), (ntrdma_sge = (void *)(wqe + 1)),
-			     (ibv_sge = swr->sg_list);
-		     i < swr->num_sge; (i++), (ntrdma_sge++), (ibv_sge++)) {
-			ntrdma_sge->key = ibv_sge->lkey;
-			ntrdma_sge->addr = ibv_sge->addr;
-			ntrdma_sge->len = ibv_sge->length;
-		}
+		memcpy(wqe + 1, swr->sg_list, tail_size);
 
 	return available_size_in - available_size;
 }
