@@ -231,9 +231,23 @@ struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 				struct ibv_comp_channel *channel,
 				int comp_vector)
 {
-	struct ibv_cq *cq;
-	struct ibv_create_cq cmd;
-	struct ib_uverbs_create_cq_resp resp;
+	struct ntrdma_cq *cq;
+	struct {
+		struct ibv_create_cq cmd;
+		uint64_t poll_page_ptr;
+	} ext_cmd;
+	struct {
+		struct ib_uverbs_create_cq_resp resp;
+		int cqfd;
+	} ext_resp = {
+		.cqfd = -1,
+	};
+
+	/* resp must be first member of ext_resp. */
+	assert((void *)&ext_resp == (void *)&ext_resp.resp);
+
+	/* cmd must be first member of ext_cmd. */
+	assert((void *)&ext_cmd == (void *)&ext_cmd.cmd);
 
 	cq = malloc(sizeof(*cq));
 	if (!cq)
@@ -241,32 +255,74 @@ struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 
 	memset(cq, 0, sizeof(*cq));
 
+	pthread_mutex_init(&cq->mutex, NULL);
+
+	cq->buffer_size = sysconf(_SC_PAGESIZE);
+	cq->buffer = memalign(cq->buffer_size, cq->buffer_size);
+	if (!cq->buffer)
+		goto err;
+	ext_cmd.poll_page_ptr = (unsigned long)cq->buffer;
+
 	errno = ibv_cmd_create_cq(context, cqe, channel,
-				  comp_vector, cq,
-				  &cmd, sizeof cmd,
-				  &resp, sizeof resp);
+				comp_vector, &cq->ibv_cq,
+				&ext_cmd.cmd, sizeof ext_cmd,
+				&ext_resp.resp, sizeof ext_resp);
 	if (errno)
-		goto err_free;
+		goto err;
 
-	return cq;
+	cq->fd = ext_resp.cqfd;
 
-err_free:
+	PRINT_DEBUG_KMSG("NTRDMADEB %s: cq->fd = %d\n", __func__, cq->fd);
+
+	if (cq->fd < 0) {
+		free(cq->buffer);
+		cq->buffer = NULL;
+	}
+
+	return &cq->ibv_cq;
+
+ err:
+	if (cq->buffer)
+		free(cq->buffer);
+
+	pthread_mutex_destroy(&cq->mutex);
+
 	free(cq);
 	return NULL;
 }
 
-int ntrdma_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc)
+int ntrdma_poll_cq(struct ibv_cq *_cq, int num_entries, struct ibv_wc *wc)
 {
-	return ibv_cmd_poll_cq(cq, num_entries, wc);
+ 	DEFINE_NTC_FUNC_PERF_TRACKER(perf, 1 << 20);
+	struct ntrdma_cq *cq = to_ntrdma_cq(_cq);
+	int rc;
+
+	pthread_mutex_lock(&cq->mutex);
+	rc = ibv_cmd_poll_cq(_cq, num_entries, wc);
+	pthread_mutex_unlock(&cq->mutex);
+
+ 	NTC_PERF_MEASURE(perf);
+
+	return rc;
 }
 
-int ntrdma_destroy_cq(struct ibv_cq *cq)
+int ntrdma_destroy_cq(struct ibv_cq *_cq)
 {
+	struct ntrdma_cq *cq = to_ntrdma_cq(_cq);
 	int ret;
 
-	ret = ibv_cmd_destroy_cq(cq);
+	if (cq->fd >= 0) {
+		close(cq->fd);
+		cq->fd = -1;
+	}
+
+	ret = ibv_cmd_destroy_cq(&cq->ibv_cq);
 	if (ret)
 		return ret;
+
+	free(cq->buffer);
+
+	pthread_mutex_destroy(&cq->mutex);
 
 	free(cq);
 	return 0;

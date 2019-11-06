@@ -72,6 +72,19 @@ static inline struct ntrdma_qp *to_ntrdma_qp(struct ibv_qp *ibv_qp)
         return container_of(ibv_qp, struct ntrdma_qp, ibv_qp);
 }
 
+struct ntrdma_cq {
+	struct ibv_cq ibv_cq;
+	pthread_mutex_t mutex;
+	void *buffer;
+	int buffer_size;
+	int fd;
+};
+
+static inline struct ntrdma_cq *to_ntrdma_cq(struct ibv_cq *ibv_cq)
+{
+        return container_of(ibv_cq, struct ntrdma_cq, ibv_cq);
+}
+
 int ntrdma_query_device(struct ibv_context *context,
 			struct ibv_device_attr *device_attr);
 int ntrdma_query_port(struct ibv_context *context, uint8_t port_num,
