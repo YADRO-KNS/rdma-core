@@ -84,6 +84,10 @@ static inline int make_ntrdma_send_wqe(struct ntrdma_send_wqe *wqe,
 		return -ENOMEM;
 	available_size -= sizeof(*wqe);
 
+	if ((swr->opcode == IBV_WR_RDMA_WRITE) &&
+		(swr->num_sge == 1) && (swr->sg_list[0].length <= 8))
+		swr->send_flags = swr->send_flags | IBV_SEND_INLINE;
+
 	is_inline = ((swr->opcode == IBV_WR_RDMA_WRITE) &&
 		(swr->send_flags & IBV_SEND_INLINE));
 
