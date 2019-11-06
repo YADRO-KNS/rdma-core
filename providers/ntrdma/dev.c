@@ -30,6 +30,7 @@
  * SOFTWARE.
  */
 
+#include "ntrdma_ioctl.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,33 +39,6 @@
 #include <malloc.h>
 #include <sys/ioctl.h>
 #include "ntrdma.h"
-
-/* MUST BE THE SAME AS IN KERNEL */
-struct ntrdma_send_wqe {
-	uint64_t			ulp_handle;
-	uint16_t			op_code;
-	uint16_t			op_status;
-	uint32_t			recv_key;
-	struct ibv_sge			rdma_sge;
-	uint32_t			imm_data;
-	uint32_t			flags;
-	union {
-		uint32_t		sg_count;
-		uint32_t		inline_len;
-	};
-};
-
-/* MUST BE THE SAME AS IN KERNEL */
-struct ntrdma_snd_hdr {
-	uint32_t			wqe_counter;
-	uint32_t			first_wqe_size;
-};
-
-/* MUST BE THE SAME AS IN KERNEL */
-#define NTRDMA_IOCTL_BASE 'N'
-
-/* MUST BE THE SAME AS IN KERNEL */
-#define NTRDMA_IOCTL_SEND		_IOWR(NTRDMA_IOCTL_BASE, 0x30, uint32_t)
 
 static inline int make_ntrdma_send_wqe(struct ntrdma_send_wqe *wqe,
 				struct ibv_send_wr *swr,
@@ -234,13 +208,13 @@ struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 	struct ntrdma_cq *cq;
 	struct {
 		struct ibv_create_cq cmd;
-		uint64_t poll_page_ptr;
+		struct ntrdma_create_cq_ext ext;
 	} ext_cmd;
 	struct {
 		struct ib_uverbs_create_cq_resp resp;
-		int cqfd;
+		struct ntrdma_create_cq_resp_ext ext;
 	} ext_resp = {
-		.cqfd = -1,
+		.ext = { .cqfd = -1 }
 	};
 
 	/* resp must be first member of ext_resp. */
@@ -261,7 +235,9 @@ struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 	cq->buffer = memalign(cq->buffer_size, cq->buffer_size);
 	if (!cq->buffer)
 		goto err;
-	ext_cmd.poll_page_ptr = (unsigned long)cq->buffer;
+	ext_cmd.ext.poll_page_ptr = (unsigned long)cq->buffer;
+
+	ntrdma_ioctl_if_init_desc(&ext_cmd.ext.desc);
 
 	errno = ibv_cmd_create_cq(context, cqe, channel,
 				comp_vector, &cq->ibv_cq,
@@ -270,7 +246,7 @@ struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 	if (errno)
 		goto err;
 
-	cq->fd = ext_resp.cqfd;
+	cq->fd = ext_resp.ext.cqfd;
 
 	PRINT_DEBUG_KMSG("NTRDMADEB %s: cq->fd = %d\n", __func__, cq->fd);
 
@@ -295,13 +271,64 @@ int ntrdma_poll_cq(struct ibv_cq *_cq, int num_entries, struct ibv_wc *wc)
 {
  	DEFINE_NTC_FUNC_PERF_TRACKER(perf, 1 << 20);
 	struct ntrdma_cq *cq = to_ntrdma_cq(_cq);
+	struct ntrdma_poll_hdr *hdr;
+	int max_entries, req_entries, resp_entries, total;
 	int rc;
 
+	static_assert(sizeof(*wc) == sizeof(struct ntrdma_ibv_wc),
+		"Must match");
+
+	if (num_entries < 0)
+		return -EINVAL;
+
+	if (num_entries == 0)
+		return 0;
+
+	if (cq->fd < 0) {
+		rc = ibv_cmd_poll_cq(_cq, num_entries, wc);
+		NTC_PERF_MEASURE(perf);
+		return rc;
+	}
+
 	pthread_mutex_lock(&cq->mutex);
-	rc = ibv_cmd_poll_cq(_cq, num_entries, wc);
+
+	rc = 0;
+	total = 0;
+	max_entries = (cq->buffer_size - sizeof(*hdr))  / sizeof(*wc);
+	hdr = cq->buffer;
+	while (num_entries) {
+		if (num_entries > max_entries)
+			req_entries = max_entries;
+		else
+			req_entries = num_entries;
+
+		hdr->wc_counter = req_entries;
+		rc = ioctl(cq->fd, NTRDMA_IOCTL_POLL);
+		if ((rc == -1) && (errno > 0))
+			rc = -errno;
+		if (rc < 0)
+			break;
+		resp_entries = hdr->wc_counter;
+		if (!resp_entries)
+			break;
+
+		memcpy(wc + total,
+			cq->buffer + sizeof(*hdr) + sizeof(*wc) * total,
+			sizeof(*wc) * resp_entries);
+
+		total += resp_entries;
+		num_entries -= resp_entries;
+
+		if (resp_entries < req_entries)
+			break;
+	}
+
 	pthread_mutex_unlock(&cq->mutex);
 
  	NTC_PERF_MEASURE(perf);
+
+	if (total)
+		rc = total;
 
 	return rc;
 }
@@ -334,14 +361,14 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 	struct ntrdma_qp *qp;
 	struct {
 		struct ibv_create_qp cmd;
-		uint64_t send_page_ptr;
+		struct ntrdma_create_qp_ext ext;
 	} ext_cmd;
 	struct {
 		 /* resp must be first member of this struct. */
 		struct ib_uverbs_create_qp_resp resp;
-		int qpfd;
+		struct ntrdma_create_qp_resp_ext ext;
 	} ext_resp = {
-		.qpfd = -1,
+		.ext = { .qpfd = -1 }
 	};
 
 	/* resp must be first member of ext_resp. */
@@ -362,7 +389,9 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 	qp->buffer = memalign(qp->buffer_size, qp->buffer_size);
 	if (!qp->buffer)
 		goto err;
-	ext_cmd.send_page_ptr = (unsigned long)qp->buffer;
+	ext_cmd.ext.send_page_ptr = (unsigned long)qp->buffer;
+
+	ntrdma_ioctl_if_init_desc(&ext_cmd.ext.desc);
 
 	errno = ibv_cmd_create_qp(pd, &qp->ibv_qp, attr,
 				&ext_cmd.cmd, sizeof ext_cmd,
@@ -370,7 +399,7 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 	if (errno)
 		goto err;
 
-	qp->fd = ext_resp.qpfd;
+	qp->fd = ext_resp.ext.qpfd;
 
 	PRINT_DEBUG_KMSG("NTRDMADEB %s: qp->fd = %d\n", __func__, qp->fd);
 
@@ -479,10 +508,13 @@ int ntrdma_post_send(struct ibv_qp *_qp, struct ibv_send_wr *swr,
 
 		hdr->wqe_counter = wqe_counter;
 
-		rc = ioctl(qp->fd, NTRDMA_IOCTL_SEND, qp->buffer);
+		rc = ioctl(qp->fd, NTRDMA_IOCTL_SEND);
 
 		if (rc >= 0)
 			continue;
+
+		if ((rc == -1) && (errno > 0))
+			rc = -errno;
 
 		for ((wqe_counter = hdr->wqe_counter), (swr = swr_first);
 		     wqe_counter; wqe_counter--)
