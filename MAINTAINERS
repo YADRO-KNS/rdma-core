@@ -182,3 +182,8 @@ PYVERBS
 M:	Noa Osherovich <noaos@mellanox.com>
 S:	Supported
 F:	pyverbs/
+
+NTRDMA PROVIDER (for ntrdma.ko)
+M:	Andrew Boyer <andrew.boyer@dell.com>
+S:	Supported
+F:	providers/ntrdma/
