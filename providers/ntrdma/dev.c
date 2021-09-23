@@ -107,14 +107,16 @@ static inline int make_ntrdma_send_wqe(struct ntrdma_send_wqe *wqe,
 	return available_size_in - available_size;
 }
 
-int ntrdma_query_device(struct ibv_context *context,
-			struct ibv_device_attr *device_attr)
+int ntrdma_query_device_ex(struct ibv_context *context,
+			const struct ibv_query_device_ex_input *input,
+			struct ibv_device_attr_ex *device_attr,
+			size_t attr_size)
 {
-	uint64_t raw_fw_ver;
-	struct ibv_query_device cmd;
+	struct ib_uverbs_ex_query_device_resp cmd;
+	size_t cmd_size = sizeof(cmd);
 
-	return ibv_cmd_query_device(context, device_attr,
-				    &raw_fw_ver, &cmd, sizeof cmd);
+	return ibv_cmd_query_device_any(context, input, device_attr,
+				    attr_size, &cmd, &cmd_size);
 }
 
 int ntrdma_query_port(struct ibv_context *context, uint8_t port_num,
@@ -164,7 +166,7 @@ int ntrdma_dealloc_pd(struct ibv_pd *pd)
 }
 
 struct ibv_mr *ntrdma_reg_mr(struct ibv_pd *pd, void *addr,
-			     size_t length, int access)
+			     size_t length, uint64_t hca_va, int access)
 {
 	struct verbs_mr *vmr;
 	struct ibv_reg_mr cmd;
@@ -177,10 +179,10 @@ struct ibv_mr *ntrdma_reg_mr(struct ibv_pd *pd, void *addr,
 	memset(vmr, 0, sizeof(*vmr));
 
 	errno = ibv_cmd_reg_mr(pd, addr,
-			       length, (unsigned long)addr,
+			       length, hca_va,
 			       access, vmr,
-			       &cmd, sizeof cmd,
-			       &resp, sizeof resp);
+			       &cmd, sizeof(cmd),
+			       &resp, sizeof(resp));
 	if (errno) {
 		free(vmr);
 		return NULL;

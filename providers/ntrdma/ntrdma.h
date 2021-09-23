@@ -85,14 +85,16 @@ static inline struct ntrdma_cq *to_ntrdma_cq(struct ibv_cq *ibv_cq)
         return container_of(ibv_cq, struct ntrdma_cq, ibv_cq);
 }
 
-int ntrdma_query_device(struct ibv_context *context,
-			struct ibv_device_attr *device_attr);
+int ntrdma_query_device_ex(struct ibv_context *context,
+			const struct ibv_query_device_ex_input *input,
+			struct ibv_device_attr_ex *device_attr,
+			size_t attr_size);
 int ntrdma_query_port(struct ibv_context *context, uint8_t port_num,
 		      struct ibv_port_attr *port_attr);
 struct ibv_pd *ntrdma_alloc_pd(struct ibv_context *context);
 int ntrdma_dealloc_pd(struct ibv_pd *pd);
 struct ibv_mr *ntrdma_reg_mr(struct ibv_pd *pd, void *addr,
-			     size_t length, int access);
+			     size_t length, uint64_t hca_va, int access);
 int ntrdma_dereg_mr(struct verbs_mr *vmr);
 struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 				struct ibv_comp_channel *channel,

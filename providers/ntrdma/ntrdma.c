@@ -42,8 +42,10 @@ static const struct verbs_match_ent hca_table[] = {
 	{},
 };
 
+static void ntrdma_free_context(struct ibv_context *ibctx);
+
 static const struct verbs_context_ops ntrdma_ctx_ops = {
-	.query_device = ntrdma_query_device,
+	.query_device_ex = ntrdma_query_device_ex,
 	.query_port = ntrdma_query_port,
 	.alloc_pd = ntrdma_alloc_pd,
 	.dealloc_pd = ntrdma_dealloc_pd,
@@ -61,6 +63,7 @@ static const struct verbs_context_ops ntrdma_ctx_ops = {
 	.create_ah = ntrdma_create_ah,
 	.destroy_ah = ntrdma_destroy_ah,
 	.req_notify_cq = ntrdma_req_notify_cq,
+	.free_context  = ntrdma_free_context,
 };
 
 bool ntrdma_measure_perf;
@@ -168,6 +171,5 @@ static const struct verbs_device_ops ntrdma_dev_ops = {
 	.alloc_device = ntrdma_driver_alloc,
 	.uninit_device = ntrdma_driver_uninit,
 	.alloc_context = ntrdma_alloc_context,
-	.free_context  = ntrdma_free_context
 };
 PROVIDER_DRIVER(ntrdma, ntrdma_dev_ops);
