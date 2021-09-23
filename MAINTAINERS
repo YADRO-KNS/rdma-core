@@ -179,6 +179,11 @@ L:	pv-drivers@vmware.com
 S:	Supported
 F:	providers/vmw_pvrdma/
 
+NTRDMA PROVIDER (for ntrdma.ko)
+M:	Andrew Boyer <andrew.boyer@dell.com>
+S:	Supported
+F:	providers/ntrdma/
+
 PYVERBS
 M:	Edward Srouji <edwards@mellanox.com>
 S:	Supported

@@ -188,6 +188,7 @@ Device-specific plug-in ibverbs userspace drivers are included:
 - librxe: A software implementation of the RoCE protocol
 - libsiw: A software implementation of the iWarp protocol
 - libvmw_pvrdma: VMware paravirtual RDMA device
+- libntrdma: Non-Transparent RDMA device
 
 %package -n libibverbs-utils
 Summary: Examples for the libibverbs library
