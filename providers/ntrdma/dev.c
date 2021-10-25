@@ -232,8 +232,7 @@ struct ibv_cq *ntrdma_create_cq(struct ibv_context *context, int cqe,
 	pthread_mutex_init(&cq->mutex, NULL);
 
 	cq->buffer_size = sysconf(_SC_PAGESIZE);
-	cq->buffer = memalign(cq->buffer_size, cq->buffer_size);
-	if (!cq->buffer)
+	if (posix_memalign(&cq->buffer, cq->buffer_size, cq->buffer_size))
 		goto err;
 	ext_cmd.ext.poll_page_ptr = (unsigned long)cq->buffer;
 
@@ -313,7 +312,7 @@ int ntrdma_poll_cq(struct ibv_cq *_cq, int num_entries, struct ibv_wc *wc)
 			break;
 
 		memcpy(wc + total,
-			cq->buffer + sizeof(*hdr) + sizeof(*wc) * total,
+			cq->buffer + sizeof(*hdr),
 			sizeof(*wc) * resp_entries);
 
 		total += resp_entries;
@@ -386,8 +385,7 @@ struct ibv_qp *ntrdma_create_qp(struct ibv_pd *pd,
 	pthread_mutex_init(&qp->mutex, NULL);
 
 	qp->buffer_size = sysconf(_SC_PAGESIZE);
-	qp->buffer = memalign(qp->buffer_size, qp->buffer_size);
-	if (!qp->buffer)
+	if (posix_memalign(&qp->buffer, qp->buffer_size, qp->buffer_size))
 		goto err;
 	ext_cmd.ext.send_page_ptr = (unsigned long)qp->buffer;
 
